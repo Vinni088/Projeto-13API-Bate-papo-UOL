@@ -35,6 +35,30 @@ const schemaMsg = Joi.object({
     text: Joi.string().required(),
     type: Joi.string().required().valid('message', 'private_message')
 })
+
+/* Remoção automática de usuários inativos: */
+setInterval(async () => {
+    let agora = Date.now();
+    try{
+        let participantes = await db.collection('participants').find().toArray();
+        for (let i = 0; i < participantes.length; i++) {
+            if (agora - participantes[i].lastStatus > 15000) {
+                const result = await db.collection("participants").deleteOne({ name:participantes[i].name })
+                let objeto = {
+                    from: `${participantes[i].name}`,
+                    to: 'Todos',
+                    text: 'sai da sala...',
+                    type: 'status',
+                    time: `${dayjs().format('HH:mm:ss')}`
+                }
+		        await db.collection("messages").insertOne(objeto);
+            }
+        }
+    } catch(resposta){
+        log(resposta);
+    }
+ }, 15000);
+
 /* Endpoints */
 
 /* Participantes */
@@ -136,6 +160,25 @@ app.get("/messages", async (req, res) => {
     
 })
 
+/* Status */
+app.post("/status", async (req, res) => {
+    let user;
+    if(!req.headers.user) {
+        return res.status(404).send("Header incompleto: User ausente!");
+    } else {
+        user = req.headers.user;
+    }
+    let usuarioAtualizado = {name: user, lastStatus: Date.now()}
+
+    try{
+        db.collection("participants").updateOne({ name: user }, { $set: usuarioAtualizado});
+        res.send("Usuario Atualizado com Sucesso");
+    } catch {
+        res.status(500).send(err.message);
+    }
+
+})
+
 /* Clean */
 app.delete("/all", async (req,res) => {
     try {
@@ -145,8 +188,10 @@ app.delete("/all", async (req,res) => {
     } catch {
         res.status(500).send(err.message);
     }
-    
+    remoçãoAuto();
+    res.send('Teste para o delete de participantes')
 })
+
 // Ligar a aplicação do servidor para ouvir requisições:
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Servidor está rodando na porta ${PORT}`));
