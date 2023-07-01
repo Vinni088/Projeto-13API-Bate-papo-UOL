@@ -149,6 +149,11 @@ app.get("/messages", async (req, res) => {
   if(Number(limit) <= 0 || isNaN(limit)) {
     return res.status(422).send("Escolha um Limite de mensagens válido");
   }
+  if (!req.headers.user) {
+    return res.status(422).send("Header incompleto: User ausente!");
+  } else {
+    user = req.headers.user;
+  }
 
   try {
     const mensagensTotais = await db
