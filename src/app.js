@@ -39,6 +39,7 @@ const schemaMsg = Joi.object({
 })
 
 /* Remoção automática de usuários inativos: */
+/*
 setInterval(async () => {
     let agora = Date.now();
     try{
@@ -48,7 +49,7 @@ setInterval(async () => {
                 const result = await db.collection("participants").deleteOne({ name:participantes[i].name })
                 let objeto = {
                     from: `${participantes[i].name}`,
-                    to: 'Todos',
+                    to:   'Todos',
                     text: 'sai da sala...',
                     type: 'status',
                     time: `${dayjs().format('HH:mm:ss')}`
@@ -60,7 +61,7 @@ setInterval(async () => {
         log(resposta);
     }
 }, 15000);
-
+*/
 /* Endpoints */
 
 /* Participantes */
@@ -155,7 +156,7 @@ app.get("/messages", async (req, res) => {
     try {
         const mensagensTotais = await db.collection("messages")
         .find( { $or: [ { from: user }, { to: user }, {to: "Todos"} ] } ).toArray();
-        if(limit > 0) {
+        if(limit > 0 && mensagensTotais.length > limit) {
             for (let i = 0; i < limit; i++) {
                 mensagensLimitadas.push(mensagensTotais[i]);
             }
@@ -199,8 +200,6 @@ app.delete("/all", async (req,res) => {
     } catch {
         res.status(500).send(err.message);
     }
-    remoçãoAuto();
-    res.send('Teste para o delete de participantes')
 })
 
 // Ligar a aplicação do servidor para ouvir requisições:
