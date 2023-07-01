@@ -1,7 +1,9 @@
 import { MongoClient, ObjectId } from "mongodb";
-import dayjs from "dayjs";
+import { stripHtml } from "string-strip-html";
+import { strict as assert } from "assert";
 import express from "express";
 import dotenv from "dotenv";
+import dayjs from "dayjs";
 import cors from "cors";
 import Joi from "joi";
 
@@ -57,7 +59,7 @@ setInterval(async () => {
     } catch(resposta){
         log(resposta);
     }
- }, 15000);
+}, 15000);
 
 /* Endpoints */
 
@@ -73,7 +75,7 @@ app.get("/participants", async (req, res) => {
 app.post("/participants", async (req, res) => {
     const {name} = req.body;
     const lastStatus = Date.now();
-    let objeto = {name, lastStatus};
+    let objeto1 = {name, lastStatus};
 
     const validation = schemaParticipante.validate(req.body, { abortEarly: false });
 
@@ -84,8 +86,15 @@ app.post("/participants", async (req, res) => {
     try {
         const testeParticip = await db.collection("participants").findOne({ name: name });
 	    if (testeParticip) {return res.status(409).send("Esse nome já está em uso!")};
-        
-        await db.collection("participants").insertOne(objeto);
+        let objeto2 = {
+            from: `${name}`,
+            to:   'Todos',
+            text: 'entra na sala...',
+            type: 'status',
+            time: `${dayjs().format('HH:mm:ss')}`
+        }
+        await db.collection("participants").insertOne(objeto1);
+        await db.collection("messages").insertOne(objeto2);
 		res.sendStatus(201);
     } catch(err) {
         res.status(500).send(err.message)
@@ -134,7 +143,7 @@ app.get("/messages", async (req, res) => {
 
     if(req.query.limit && req.query.limit > 0) {
         limit = Number(req.query.limit);
-    } else if(req.query.limit && req.query.limit < 0) {
+    } else if(req.query.limit && req.query.limit <= 0) {
         return res.status(422).send("Escolha um Limite de mensagens válido");
     }
     if(!req.headers.user) {
@@ -168,10 +177,12 @@ app.post("/status", async (req, res) => {
     } else {
         user = req.headers.user;
     }
-    let usuarioAtualizado = {name: user, lastStatus: Date.now()}
 
     try{
-        db.collection("participants").updateOne({ name: user }, { $set: usuarioAtualizado});
+        const testeParticip = await db.collection("participants").findOne({ name: user });
+	    if (!testeParticip) {return res.status(404).send("Esse nome não está em uso!")};
+
+        db.collection("participants").updateOne({ name: user }, { $set: {name: user, lastStatus: Date.now()}});
         res.send("Usuario Atualizado com Sucesso");
     } catch {
         res.status(500).send(err.message);
