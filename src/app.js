@@ -7,8 +7,6 @@ import dayjs from "dayjs";
 import cors from "cors";
 import Joi from "joi";
 
-
-
 // Criação do app:
 const app = express();
 const log = console.log;
@@ -19,27 +17,26 @@ app.use(express.json()); //Dados via JSON
 dotenv.config(); // Dotenv habilitado
 
 // Conexão com o Banco:
-const mongoClient = new MongoClient(process.env.DATABASE_URL)
+const mongoClient = new MongoClient(process.env.DATABASE_URL);
 try {
-    await mongoClient.connect();
-    log("MongoDB conectado e rodando");
-} catch(erro){
-    log("Servidor rodando mas sem o MongoDB")
+  await mongoClient.connect();
+  log("MongoDB conectado e rodando");
+} catch (erro) {
+  log("Servidor rodando mas sem o MongoDB");
 }
-const db = mongoClient.db()
+const db = mongoClient.db();
 
 // Validações:
 const schemaParticipante = Joi.object({
-    name: Joi.string().required(),
-})
+  name: Joi.string().required(),
+});
 const schemaMsg = Joi.object({
-    to: Joi.string().required(),
-    text: Joi.string().required(),
-    type: Joi.string().required().valid('message', 'private_message')
-})
+  to: Joi.string().required(),
+  text: Joi.string().required(),
+  type: Joi.string().required().valid("message", "private_message"),
+});
 
 /* Remoção automática de usuários inativos: */
-/*
 setInterval(async () => {
     let agora = Date.now();
     try{
@@ -61,146 +58,153 @@ setInterval(async () => {
         log(resposta);
     }
 }, 15000);
-*/
+
 /* Endpoints */
 
 /* Participantes */
 app.get("/participants", async (req, res) => {
-    try {
-        const participantes = await db.collection("participants").find().toArray();
-        res.send(participantes);
-    } catch(erro){
-        res.status(500).send(erro.message);
-    }
-})
+  try {
+    const participantes = await db.collection("participants").find().toArray();
+    res.send(participantes);
+  } catch (erro) {
+    res.status(500).send(erro.message);
+  }
+});
 app.post("/participants", async (req, res) => {
-    const {name} = req.body;
-    const lastStatus = Date.now();
-    let objeto1 = {name, lastStatus};
+  const { name } = req.body;
+  const lastStatus = Date.now();
+  let objeto1 = { name, lastStatus };
 
-    const validation = schemaParticipante.validate(req.body, { abortEarly: false });
+  const validation = schemaParticipante.validate(req.body, {
+    abortEarly: false,
+  });
 
-    if(validation.error) {
-        const errors = validation.error.details.map(detail => detail.message);
-		return res.status(422).send(errors);
+  if (validation.error) {
+    const errors = validation.error.details.map((detail) => detail.message);
+    return res.status(422).send(errors);
+  }
+  try {
+    const testeParticip = await db
+      .collection("participants")
+      .findOne({ name: name });
+    if (testeParticip) {
+      return res.status(409).send("Esse nome já está em uso!");
     }
-    try {
-        const testeParticip = await db.collection("participants").findOne({ name: name });
-	    if (testeParticip) {return res.status(409).send("Esse nome já está em uso!")};
-        let objeto2 = {
-            from: `${name}`,
-            to:   'Todos',
-            text: 'entra na sala...',
-            type: 'status',
-            time: `${dayjs().format('HH:mm:ss')}`
-        }
-        await db.collection("participants").insertOne(objeto1);
-        await db.collection("messages").insertOne(objeto2);
-		res.sendStatus(201);
-    } catch(err) {
-        res.status(500).send(err.message)
-    }
-})
+    let objeto2 = {
+      from: `${name}`,
+      to: "Todos",
+      text: "entra na sala...",
+      type: "status",
+      time: `${dayjs().format("HH:mm:ss")}`,
+    };
+    await db.collection("participants").insertOne(objeto1);
+    await db.collection("messages").insertOne(objeto2);
+    res.sendStatus(201);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
 
 /* Mensagens */
 app.post("/messages", async (req, res) => {
-    const {to, text, type} = req.body;
-    let from;
-    if(!req.headers.user) {
-        return res.status(422).send("Header incompleto: User ausente!");
-    } else {
-        from = req.headers.user;
-    }
-    const objeto = {
-        from,
-        to,
-        text,
-        type,
-        time: dayjs().format('HH:mm:ss')
+  const { to, text, type } = req.body;
+  let from;
+  if (!req.headers.user) {
+    return res.status(422).send("Header incompleto: User ausente!");
+  } else {
+    from = req.headers.user;
+  }
+  const objeto = {
+    from,
+    to,
+    text,
+    type,
+    time: dayjs().format("HH:mm:ss"),
+  };
+
+  const validation = schemaMsg.validate(req.body, { abortEarly: false });
+  if (validation.error) {
+    const errors = validation.error.details.map((detail) => detail.message);
+    return res.status(422).send(errors);
+  }
+
+  try {
+    const testeParticip = await db
+      .collection("participants")
+      .findOne({ name: from });
+    if (!testeParticip) {
+      return res.status(422).send("Esse nome não está em uso!");
     }
 
-    const validation = schemaMsg.validate(req.body, { abortEarly: false });
-    if(validation.error) {
-        const errors = validation.error.details.map(detail => detail.message);
-		return res.status(422).send(errors);
-    }
-
-    try {
-        const testeParticip = await db.collection("participants").findOne({ name: from });
-	    if (!testeParticip) {return res.status(422).send("Esse nome não está em uso!")};
-        
-        await db.collection("messages").insertOne(objeto);
-        res.sendStatus(201);
-    } catch(err) {
-        res.status(500).send(err.message)
-    }
-    
-})
+    await db.collection("messages").insertOne(objeto);
+    res.sendStatus(201);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
 
 app.get("/messages", async (req, res) => {
-    let user;
-    let limit;
-    let mensagensLimitadas =[];
+  let user;
+  let { limit } = req.query;
+  let mensagensLimitadas = [];
+  if(Number(limit) <= 0 || isNaN(limit)) {
+    return res.status(422).send("Escolha um Limite de mensagens válido");
+  }
 
-    if(req.query.limit && req.query.limit > 0) {
-        limit = Number(req.query.limit);
-    } else if(req.query.limit && req.query.limit <= 0) {
-        return res.status(422).send("Escolha um Limite de mensagens válido");
+  try {
+    const mensagensTotais = await db
+      .collection("messages")
+      .find({ $or: [{ from: user }, { to: user }, { to: "Todos" }] })
+      .toArray();
+    if (mensagensTotais.length > limit) {
+      for (let i = 0; i < limit; i++) {
+        mensagensLimitadas.push(mensagensTotais[i]);
+      }
+      return res.send(mensagensLimitadas);
     }
-    if(!req.headers.user) {
-        return res.status(422).send("Header incompleto: User ausente!");
-    } else {
-        user = req.headers.user;
-    }
-
-    try {
-        const mensagensTotais = await db.collection("messages")
-        .find( { $or: [ { from: user }, { to: user }, {to: "Todos"} ] } ).toArray();
-        if(limit > 0 && mensagensTotais.length > limit) {
-            for (let i = 0; i < limit; i++) {
-                mensagensLimitadas.push(mensagensTotais[i]);
-            }
-            return res.send(mensagensLimitadas);
-        }
-        res.send(mensagensTotais);
-    } catch {
-        res.status(500).send(err.message);
-    }
-    
-    
-})
+    res.send(mensagensTotais);
+  } catch {
+    res.status(500).send(err.message);
+  }
+});
 
 /* Status */
 app.post("/status", async (req, res) => {
-    let user;
-    if(!req.headers.user) {
-        return res.status(404).send("Header incompleto: User ausente!");
-    } else {
-        user = req.headers.user;
+  let user;
+  if (!req.headers.user) {
+    return res.status(404).send("Header incompleto: User ausente!");
+  } else {
+    user = req.headers.user;
+  }
+
+  try {
+    const testeParticip = await db
+      .collection("participants")
+      .findOne({ name: user });
+    if (!testeParticip) {
+      return res.status(404).send("Esse nome não está em uso!");
     }
 
-    try{
-        const testeParticip = await db.collection("participants").findOne({ name: user });
-	    if (!testeParticip) {return res.status(404).send("Esse nome não está em uso!")};
-
-        db.collection("participants").updateOne({ name: user }, { $set: {name: user, lastStatus: Date.now()}});
-        res.send("Usuario Atualizado com Sucesso");
-    } catch {
-        res.status(500).send(err.message);
-    }
-
-})
+    db.collection("participants").updateOne(
+      { name: user },
+      { $set: { name: user, lastStatus: Date.now() } }
+    );
+    res.send("Usuario Atualizado com Sucesso");
+  } catch {
+    res.status(500).send(err.message);
+  }
+});
 
 /* Clean */
-app.delete("/all", async (req,res) => {
-    try {
-        await db.collection("messages").deleteMany()
-        await db.collection("participants").deleteMany()
-        res.send('Tudo Limpo');
-    } catch {
-        res.status(500).send(err.message);
-    }
-})
+app.delete("/all", async (req, res) => {
+  try {
+    await db.collection("messages").deleteMany();
+    await db.collection("participants").deleteMany();
+    res.send("Tudo Limpo");
+  } catch {
+    res.status(500).send(err.message);
+  }
+});
 
 // Ligar a aplicação do servidor para ouvir requisições:
 const PORT = 5000;
