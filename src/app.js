@@ -1,8 +1,10 @@
 import { MongoClient, ObjectId } from "mongodb";
-import express from "express"
-import dotenv from "dotenv"
-import cors from "cors"
-import Joi from "joi"
+import dayjs from "dayjs";
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import Joi from "joi";
+
 
 
 // Criação do app:
@@ -24,27 +26,15 @@ try {
 }
 const db = mongoClient.db()
 
-// Formato dos Dados:
+// Validações:
 const schemaParticipante = Joi.object({
     name: Joi.string().required(),
 })
-/*let participante = {
-    name: 'João', 
-    lastStatus: 12313123
-};*/
 const schemaMsg = Joi.object({
     to: Joi.string().required(),
     text: Joi.string().required(),
     type: Joi.string().required().valid('message', 'private_message')
 })
-/*let mensagem = {
-    from: 'João', 
-    to: 'Todos', 
-    text: 'oi galera', 
-   type: 'message', 
-    time: '20:04:37'
-};*/
-
 /* Endpoints */
 
 /* Participantes */
@@ -76,15 +66,87 @@ app.post("/participants", async (req, res) => {
     } catch(err) {
         res.status(500).send(err.message)
     }
-    
+})
 
+/* Mensagens */
+app.post("/messages", async (req, res) => {
+    const {to, text, type} = req.body;
+    let from;
+    if(!req.headers.user) {
+        return res.status(422).send("Header incompleto: User ausente!");
+    } else {
+        from = req.headers.user;
+    }
+    const objeto = {
+        from,
+        to,
+        text,
+        type,
+        time: dayjs().format('HH:mm:ss')
+    }
+
+    const validation = schemaMsg.validate(req.body, { abortEarly: false });
+    if(validation.error) {
+        const errors = validation.error.details.map(detail => detail.message);
+		return res.status(422).send(errors);
+    }
+
+    try {
+        const testeParticip = await db.collection("participants").findOne({ name: from });
+	    if (!testeParticip) {return res.status(422).send("Esse nome não está em uso!")};
+        
+        await db.collection("messages").insertOne(objeto);
+        res.sendStatus(201);
+    } catch(err) {
+        res.status(500).send(err.message)
+    }
+    
+})
+
+app.get("/messages", async (req, res) => {
+    let user;
+    let limit;
+    let mensagensLimitadas =[];
+
+    if(req.query.limit && req.query.limit > 0) {
+        limit = Number(req.query.limit);
+    } else if(req.query.limit && req.query.limit < 0) {
+        return res.status(422).send("Escolha um Limite de mensagens válido");
+    }
+    if(!req.headers.user) {
+        return res.status(422).send("Header incompleto: User ausente!");
+    } else {
+        user = req.headers.user;
+    }
+
+    try {
+        const mensagensTotais = await db.collection("messages")
+        .find( { $or: [ { from: user }, { to: user }, {to: "Todos"} ] } ).toArray();
+        if(limit > 0) {
+            for (let i = 0; i < limit; i++) {
+                mensagensLimitadas.push(mensagensTotais[i]);
+            }
+            return res.send(mensagensLimitadas);
+        }
+        res.send(mensagensTotais);
+    } catch {
+        res.status(500).send(err.message);
+    }
     
     
 })
 
-/* Mensagens */
-
-
+/* Clean */
+app.delete("/all", async (req,res) => {
+    try {
+        await db.collection("messages").deleteMany()
+        await db.collection("participants").deleteMany()
+        res.send('Tudo Limpo');
+    } catch {
+        res.status(500).send(err.message);
+    }
+    
+})
 // Ligar a aplicação do servidor para ouvir requisições:
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Servidor está rodando na porta ${PORT}`));
