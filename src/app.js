@@ -38,12 +38,11 @@ const schemaMsg = Joi.object({
 
 /* Remoção automática de usuários inativos: */
 setInterval(async () => {
-    let agora = Date.now();
     try{
         let participantes = await db.collection('participants').find().toArray();
         for (let i = 0; i < participantes.length; i++) {
-            if (agora - participantes[i].lastStatus > 15000) {
-                const result = await db.collection("participants").deleteOne({ name:participantes[i].name })
+            if ((Date.now() - participantes[i].lastStatus) >= 15000) {
+                await db.collection("participants").deleteOne({ name:participantes[i].name })
                 let objeto = {
                     from: `${participantes[i].name}`,
                     to:   'Todos',
