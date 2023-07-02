@@ -38,24 +38,26 @@ const schemaMsg = Joi.object({
 
 /* Remoção automática de usuários inativos: */
 setInterval(async () => {
-    try{
-        let participantes = await db.collection('participants').find().toArray();
-        for (let i = 0; i < participantes.length; i++) {
-            if ((Date.now() - participantes[i].lastStatus) >= 15000) {
-                await db.collection("participants").deleteOne({ name:participantes[i].name })
-                let objeto = {
-                    from: `${participantes[i].name}`,
-                    to:   'Todos',
-                    text: 'sai da sala...',
-                    type: 'status',
-                    time: `${dayjs().format('HH:mm:ss')}`
-                }
-		        await db.collection("messages").insertOne(objeto);
-            }
-        }
-    } catch(resposta){
-        log(resposta);
+  try {
+    let participantes = await db.collection("participants").find().toArray();
+    for (let i = 0; i < participantes.length; i++) {
+      if (Date.now() - participantes[i].lastStatus >= 15000) {
+        await db
+          .collection("participants")
+          .deleteOne({ name: participantes[i].name });
+        let objeto = {
+          from: `${participantes[i].name}`,
+          to: "Todos",
+          text: "sai da sala...",
+          type: "status",
+          time: `${dayjs().format("HH:mm:ss")}`,
+        };
+        await db.collection("messages").insertOne(objeto);
+      }
     }
+  } catch (resposta) {
+    log(resposta);
+  }
 }, 15000);
 
 /* Endpoints */
@@ -70,8 +72,10 @@ app.get("/participants", async (req, res) => {
   }
 });
 app.post("/participants", async (req, res) => {
-  const { name } = req.body;
-  const lastStatus = Date.now();
+  let { name } = req.body;
+  let lastStatus = Date.now();
+  name = stripHtml(name).result;
+  name = name.trim();
   let objeto1 = { name, lastStatus };
 
   const validation = schemaParticipante.validate(req.body, {
@@ -106,13 +110,17 @@ app.post("/participants", async (req, res) => {
 
 /* Mensagens */
 app.post("/messages", async (req, res) => {
-  const { to, text, type } = req.body;
+  let { to, text, type } = req.body;
+  text = stripHtml(text).result;
+  text = text.trim();
   let from;
   if (!req.headers.user) {
     return res.status(422).send("Header incompleto: User ausente!");
   } else {
-    from = req.headers.user;
+    from = stripHtml(req.headers.user).result;
+    from = from.trim();
   }
+
   const objeto = {
     from,
     to,
@@ -146,8 +154,10 @@ app.get("/messages", async (req, res) => {
   let user;
   let { limit } = req.query;
   let mensagensLimitadas = [];
-  if(Number(limit) <= 0 || isNaN(limit)) {
-    return res.status(422).send("Escolha um Limite de mensagens válido");
+  if (limit) {
+    if (Number(limit) <= 0 || isNaN(limit)) {
+      return res.status(422).send("Escolha um Limite de mensagens válido");
+    }
   }
   if (!req.headers.user) {
     return res.status(422).send("Header incompleto: User ausente!");
@@ -168,6 +178,86 @@ app.get("/messages", async (req, res) => {
     }
     res.send(mensagensTotais);
   } catch {
+    res.status(500).send(err.message);
+  }
+});
+
+app.delete("/messages/:id", async (req, res) => {
+  let user;
+  if (!req.headers.user) {
+    return res.status(422).send("Header incompleto: User ausente!");
+  } else {
+    user = req.headers.user;
+  }
+
+  const { id } = req.params;
+  try {
+    let mensagem = await db
+      .collection("messages")
+      .findOne({ _id: new ObjectId(id) });
+    if (!mensagem) {
+      return res.sendStatus(404);
+    } else if (mensagem.from !== user) {
+      return res.sendStatus(401);
+    }
+    await db.collection("messages").deleteOne({ _id: new ObjectId(id) });
+    res.send("Mensagem deletada");
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+app.put("/messages/:id", async (req, res) => {
+  let user;
+  const { id } = req.params;
+  let { to, text, type } = req.body;
+
+  if (!req.headers.user) {
+    return res.status(422).send("Header incompleto: User ausente!");
+  } else {
+    user = req.headers.user;
+  }
+
+  const validation = schemaMsg.validate(req.body, { abortEarly: false });
+  if (validation.error) {
+    const errors = validation.error.details.map((detail) => detail.message);
+    return res.status(422).send(errors);
+  }
+
+  try {
+    const testeParticip = await db
+      .collection("participants")
+      .findOne({ name: user });
+    if (!testeParticip) {
+      return res.status(422).send("Esse nome não está em uso!");
+    }
+
+    let mensagem = await db
+      .collection("messages")
+      .findOne({ _id: new ObjectId(id) });
+    log(mensagem);
+    if (!mensagem) {
+      return res.sendStatus(404);
+    } else if (mensagem.from !== user) {
+      return res.sendStatus(401);
+    }
+
+    await db
+      .collection("messages")
+      .updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            from: user,
+            to,
+            text,
+            type,
+            time: dayjs().format("HH:mm:ss"),
+          },
+        }
+      );
+    res.sendStatus(201);
+  } catch (err) {
     res.status(500).send(err.message);
   }
 });
