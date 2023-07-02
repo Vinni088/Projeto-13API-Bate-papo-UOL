@@ -74,18 +74,19 @@ app.get("/participants", async (req, res) => {
 app.post("/participants", async (req, res) => {
   let { name } = req.body;
   let lastStatus = Date.now();
-  name = stripHtml(name).result;
-  name = name.trim();
-  let objeto1 = { name, lastStatus };
 
   const validation = schemaParticipante.validate(req.body, {
     abortEarly: false,
   });
-
   if (validation.error) {
     const errors = validation.error.details.map((detail) => detail.message);
     return res.status(422).send(errors);
   }
+  
+  name = stripHtml(name).result;
+  name = name.trim();
+  let objeto1 = { name, lastStatus };
+
   try {
     const testeParticip = await db
       .collection("participants")
@@ -111,6 +112,13 @@ app.post("/participants", async (req, res) => {
 /* Mensagens */
 app.post("/messages", async (req, res) => {
   let { to, text, type } = req.body;
+
+  const validation = schemaMsg.validate(req.body, { abortEarly: false });
+  if (validation.error) {
+    const errors = validation.error.details.map((detail) => detail.message);
+    return res.status(422).send(errors);
+  }
+
   text = stripHtml(text).result;
   text = text.trim();
   let from;
@@ -128,12 +136,6 @@ app.post("/messages", async (req, res) => {
     type,
     time: dayjs().format("HH:mm:ss"),
   };
-
-  const validation = schemaMsg.validate(req.body, { abortEarly: false });
-  if (validation.error) {
-    const errors = validation.error.details.map((detail) => detail.message);
-    return res.status(422).send(errors);
-  }
 
   try {
     const testeParticip = await db
@@ -242,21 +244,19 @@ app.put("/messages/:id", async (req, res) => {
       return res.sendStatus(401);
     }
 
-    await db
-      .collection("messages")
-      .updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            from: user,
-            to,
-            text,
-            type,
-            time: dayjs().format("HH:mm:ss"),
-          },
-        }
-      );
-    res.sendStatus(201);
+    await db.collection("messages").updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          from: user,
+          to,
+          text,
+          type,
+          time: dayjs().format("HH:mm:ss"),
+        },
+      }
+    );
+    res.sendStatus(200);
   } catch (err) {
     res.status(500).send(err.message);
   }
